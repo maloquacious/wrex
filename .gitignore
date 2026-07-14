@@ -1,0 +1,10 @@
+*~
+*.swp
+
+# IDE
+.idea/
+
+# build files
+
+# agent files
+.claude/
