@@ -2,6 +2,7 @@ package wrex
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -103,6 +104,54 @@ func TestCellIDRejectsInvalidValues(t *testing.T) {
 	id, _ := large.EncodeCell(Cell{Face: 0, Hex: Coord{Q: 300}})
 	if _, err := world.DecodeCell(id); !errors.Is(err, ErrInvalidCellID) {
 		t.Fatalf("out-of-radius error = %v", err)
+	}
+}
+
+func TestCellIDRejectsExtremeCoordinates(t *testing.T) {
+	world, _ := NewWorld(MaxRadius)
+	centerID, err := world.EncodeCell(Cell{})
+	if err != nil {
+		t.Fatalf("EncodeCell(center): %v", err)
+	}
+
+	coordinates := []Coord{
+		{Q: math.MinInt},
+		{Q: math.MaxInt},
+		{R: math.MinInt},
+		{R: math.MaxInt},
+		{Q: math.MinInt, R: math.MaxInt},
+		{Q: math.MaxInt, R: math.MinInt},
+	}
+	for _, coordinate := range coordinates {
+		cell := Cell{Hex: coordinate}
+		if world.Contains(cell) {
+			t.Errorf("Contains(%#v) = true, want false", cell)
+		}
+		id, err := world.EncodeCell(cell)
+		if !errors.Is(err, ErrInvalidCell) {
+			t.Errorf("EncodeCell(%#v) error = %v, want ErrInvalidCell", cell, err)
+		}
+		if err == nil && id == centerID {
+			t.Errorf("EncodeCell(%#v) collided with center ID %d", cell, centerID)
+		}
+	}
+}
+
+func TestDistanceSaturatesOnOverflow(t *testing.T) {
+	tests := []struct {
+		a, b Coord
+		want int
+	}{
+		{a: Coord{}, b: Coord{Q: math.MinInt}, want: math.MaxInt},
+		{a: Coord{}, b: Coord{R: math.MaxInt}, want: math.MaxInt},
+		{a: Coord{Q: math.MinInt}, b: Coord{Q: math.MaxInt}, want: math.MaxInt},
+		{a: Coord{Q: math.MinInt, R: math.MaxInt}, b: Coord{Q: math.MaxInt, R: math.MinInt}, want: math.MaxInt},
+		{a: Coord{}, b: Coord{Q: math.MaxInt, R: -math.MaxInt}, want: math.MaxInt},
+	}
+	for _, tt := range tests {
+		if got := Distance(tt.a, tt.b); got != tt.want {
+			t.Errorf("Distance(%#v, %#v) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
 	}
 }
 
