@@ -35,17 +35,17 @@ Wrex will use two distinct direction systems.
    `compass` child package names those sectors north, northeast, southeast,
    south, southwest, and northwest.
 
-Each playable face stores which `LocalDirection` points most directly toward
-the designated north-pole seam. `World.BearingFor` and
-`World.LocalDirectionFor` convert between local directions and global bearings.
-A caller following a global bearing must recompute the local direction after
-crossing to another face.
+Each playable face stores a reference-frame mapping between `LocalDirection`
+and `Bearing`. `World.BearingFor` and `World.LocalDirectionFor` perform that
+conversion. A convergent route to a destination cannot be represented by one
+fixed local direction per face, so `World.DirectionTowardSeam` instead computes
+a cell-dependent shortest-path policy.
 
 The `compass` package designates seam 0 as its north pole and seam 3 as its
-south pole. The intended orientation makes compass bearings converge on their
-designated poles and returns `ErrImpassableSeam` when a step would enter one.
-The current orientation does not reliably satisfy that behavior; see
-[issue #2](https://github.com/maloquacious/wrex/issues/2).
+south pole. `compass.DirectionTowardPole` maps those meanings onto
+`World.DirectionTowardSeam`. Following the returned cell-dependent directions
+converges on the designated pole and returns a typed error wrapping
+`ErrImpassableSeam` when the route arrives.
 
 The proposal to retain former compass-like local constants as deprecated
 aliases was superseded by ADR 0003. Those aliases were removed while the API
@@ -58,8 +58,7 @@ was still experimental.
 - Local coordinate math remains simple and uniform on every face.
 - Global geography is explicit instead of being implied by a drawing
   convention.
-- The model can express travel toward a well-defined polar region once the
-  orientation defect is corrected.
+- The model can express travel toward a well-defined polar region.
 - The coordinate singularity is confined to inaccessible terrain.
 - Rendering and user interfaces can display compass bearings without changing
   the movement engine.

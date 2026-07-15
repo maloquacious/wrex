@@ -26,13 +26,30 @@ const (
 	SouthPoleSeam wrex.SeamID = 3
 )
 
-// LocalDirection returns the face-local movement direction for a compass
-// bearing. Recompute it after every face transition.
+// LocalDirection converts a compass bearing through a face's reference frame.
+// It is not a convergent polar-routing policy; use DirectionTowardPole when
+// navigating north or south.
 func LocalDirection(world *wrex.World, face wrex.FaceID, bearing wrex.Bearing) (wrex.LocalDirection, error) {
 	if bearing > Northwest {
 		return 0, fmt.Errorf("compass: invalid bearing %d", bearing)
 	}
 	return world.LocalDirectionFor(face, bearing)
+}
+
+// DirectionTowardPole returns the next local direction on a shortest route
+// toward the pole identified by bearing. The direction is cell-dependent and
+// must be recomputed after every move. Only North and South identify poles.
+func DirectionTowardPole(world *wrex.World, cell wrex.Cell, bearing wrex.Bearing) (wrex.LocalDirection, error) {
+	var seam wrex.SeamID
+	switch bearing {
+	case North:
+		seam = NorthPoleSeam
+	case South:
+		seam = SouthPoleSeam
+	default:
+		return 0, fmt.Errorf("compass: bearing %d does not identify a pole", bearing)
+	}
+	return world.DirectionTowardSeam(cell, seam)
 }
 
 // Bearing returns the compass bearing represented by a local direction on a

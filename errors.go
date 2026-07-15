@@ -1,6 +1,8 @@
 package wrex
 
 import (
+	"fmt"
+
 	"github.com/maloquacious/wrex/internal/cerrs"
 )
 
@@ -25,3 +27,20 @@ const (
 	// inaccessible square faces.
 	ErrImpassableSeam = cerrs.Error("wrex: impassable seam")
 )
+
+// ImpassableSeamError describes a move blocked by an inaccessible seam.
+// It unwraps to ErrImpassableSeam so callers can use both errors.Is and
+// errors.As.
+type ImpassableSeamError struct {
+	Seam      SeamID
+	Cell      Cell
+	Direction LocalDirection
+	Exit      LocalDirection
+}
+
+func (e *ImpassableSeamError) Error() string {
+	return fmt.Sprintf("%s: seam=%d face=%d direction=%d edge=%d", ErrImpassableSeam, e.Seam, e.Cell.Face, e.Direction, e.Exit)
+}
+
+// Unwrap returns ErrImpassableSeam.
+func (e *ImpassableSeamError) Unwrap() error { return ErrImpassableSeam }
