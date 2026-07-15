@@ -159,6 +159,56 @@ type World struct {
 	seams  [seamCount]Seam
 }
 
+// topologyEdge is one entry in the authoritative edge table below. Neighbor
+// values 0..23 identify playable faces; values 24..29 identify seams 0..5.
+type topologyEdge struct {
+	neighbor uint8
+	entry    LocalDirection
+	reverse  bool
+}
+
+// faceTopology is the dual of the class-III (2,1) subdivision of an
+// octahedron. It is a spherical rotation system for 24 hexagons and six
+// squares. Each row is indexed by the face's local direction and records the
+// face (or seam), destination edge, and boundary-position reversal.
+var faceTopology = [hexFaceCount][6]topologyEdge{
+	{{neighbor: 24}, {neighbor: 21, entry: Dir5}, {neighbor: 22, entry: Dir2, reverse: true}, {neighbor: 2, entry: Dir4, reverse: true}, {neighbor: 1, entry: Dir3, reverse: true}, {neighbor: 3, entry: Dir1}},
+	{{neighbor: 26}, {neighbor: 5, entry: Dir5}, {neighbor: 3, entry: Dir2, reverse: true}, {neighbor: 0, entry: Dir4, reverse: true}, {neighbor: 2, entry: Dir3, reverse: true}, {neighbor: 20, entry: Dir1}},
+	{{neighbor: 29}, {neighbor: 19, entry: Dir5}, {neighbor: 20, entry: Dir2, reverse: true}, {neighbor: 1, entry: Dir4, reverse: true}, {neighbor: 0, entry: Dir3, reverse: true}, {neighbor: 22, entry: Dir1}},
+	{{neighbor: 24}, {neighbor: 0, entry: Dir5}, {neighbor: 1, entry: Dir2, reverse: true}, {neighbor: 5, entry: Dir4, reverse: true}, {neighbor: 4, entry: Dir3, reverse: true}, {neighbor: 15, entry: Dir1}},
+	{{neighbor: 28}, {neighbor: 17, entry: Dir5}, {neighbor: 15, entry: Dir2, reverse: true}, {neighbor: 3, entry: Dir4, reverse: true}, {neighbor: 5, entry: Dir3, reverse: true}, {neighbor: 14, entry: Dir1}},
+	{{neighbor: 26}, {neighbor: 13, entry: Dir5}, {neighbor: 14, entry: Dir2, reverse: true}, {neighbor: 4, entry: Dir4, reverse: true}, {neighbor: 3, entry: Dir3, reverse: true}, {neighbor: 1, entry: Dir1}},
+	{{neighbor: 25}, {neighbor: 18, entry: Dir5}, {neighbor: 19, entry: Dir2, reverse: true}, {neighbor: 8, entry: Dir4, reverse: true}, {neighbor: 7, entry: Dir3, reverse: true}, {neighbor: 9, entry: Dir1}},
+	{{neighbor: 27}, {neighbor: 11, entry: Dir5}, {neighbor: 9, entry: Dir2, reverse: true}, {neighbor: 6, entry: Dir4, reverse: true}, {neighbor: 8, entry: Dir3, reverse: true}, {neighbor: 23, entry: Dir1}},
+	{{neighbor: 29}, {neighbor: 22, entry: Dir5}, {neighbor: 23, entry: Dir2, reverse: true}, {neighbor: 7, entry: Dir4, reverse: true}, {neighbor: 6, entry: Dir3, reverse: true}, {neighbor: 19, entry: Dir1}},
+	{{neighbor: 25}, {neighbor: 6, entry: Dir5}, {neighbor: 7, entry: Dir2, reverse: true}, {neighbor: 11, entry: Dir4, reverse: true}, {neighbor: 10, entry: Dir3, reverse: true}, {neighbor: 12, entry: Dir1}},
+	{{neighbor: 28}, {neighbor: 14, entry: Dir5}, {neighbor: 12, entry: Dir2, reverse: true}, {neighbor: 9, entry: Dir4, reverse: true}, {neighbor: 11, entry: Dir3, reverse: true}, {neighbor: 17, entry: Dir1}},
+	{{neighbor: 27}, {neighbor: 16, entry: Dir5}, {neighbor: 17, entry: Dir2, reverse: true}, {neighbor: 10, entry: Dir4, reverse: true}, {neighbor: 9, entry: Dir3, reverse: true}, {neighbor: 7, entry: Dir1}},
+	{{neighbor: 25}, {neighbor: 9, entry: Dir5}, {neighbor: 10, entry: Dir2, reverse: true}, {neighbor: 14, entry: Dir4, reverse: true}, {neighbor: 13, entry: Dir3, reverse: true}, {neighbor: 18, entry: Dir1}},
+	{{neighbor: 26}, {neighbor: 20, entry: Dir5}, {neighbor: 18, entry: Dir2, reverse: true}, {neighbor: 12, entry: Dir4, reverse: true}, {neighbor: 14, entry: Dir3, reverse: true}, {neighbor: 5, entry: Dir1}},
+	{{neighbor: 28}, {neighbor: 4, entry: Dir5}, {neighbor: 5, entry: Dir2, reverse: true}, {neighbor: 13, entry: Dir4, reverse: true}, {neighbor: 12, entry: Dir3, reverse: true}, {neighbor: 10, entry: Dir1}},
+	{{neighbor: 24}, {neighbor: 3, entry: Dir5}, {neighbor: 4, entry: Dir2, reverse: true}, {neighbor: 17, entry: Dir4, reverse: true}, {neighbor: 16, entry: Dir3, reverse: true}, {neighbor: 21, entry: Dir1}},
+	{{neighbor: 27}, {neighbor: 23, entry: Dir5}, {neighbor: 21, entry: Dir2, reverse: true}, {neighbor: 15, entry: Dir4, reverse: true}, {neighbor: 17, entry: Dir3, reverse: true}, {neighbor: 11, entry: Dir1}},
+	{{neighbor: 28}, {neighbor: 10, entry: Dir5}, {neighbor: 11, entry: Dir2, reverse: true}, {neighbor: 16, entry: Dir4, reverse: true}, {neighbor: 15, entry: Dir3, reverse: true}, {neighbor: 4, entry: Dir1}},
+	{{neighbor: 25}, {neighbor: 12, entry: Dir5}, {neighbor: 13, entry: Dir2, reverse: true}, {neighbor: 20, entry: Dir4, reverse: true}, {neighbor: 19, entry: Dir3, reverse: true}, {neighbor: 6, entry: Dir1}},
+	{{neighbor: 29}, {neighbor: 8, entry: Dir5}, {neighbor: 6, entry: Dir2, reverse: true}, {neighbor: 18, entry: Dir4, reverse: true}, {neighbor: 20, entry: Dir3, reverse: true}, {neighbor: 2, entry: Dir1}},
+	{{neighbor: 26}, {neighbor: 1, entry: Dir5}, {neighbor: 2, entry: Dir2, reverse: true}, {neighbor: 19, entry: Dir4, reverse: true}, {neighbor: 18, entry: Dir3, reverse: true}, {neighbor: 13, entry: Dir1}},
+	{{neighbor: 24}, {neighbor: 15, entry: Dir5}, {neighbor: 16, entry: Dir2, reverse: true}, {neighbor: 23, entry: Dir4, reverse: true}, {neighbor: 22, entry: Dir3, reverse: true}, {neighbor: 0, entry: Dir1}},
+	{{neighbor: 29}, {neighbor: 2, entry: Dir5}, {neighbor: 0, entry: Dir2, reverse: true}, {neighbor: 21, entry: Dir4, reverse: true}, {neighbor: 23, entry: Dir3, reverse: true}, {neighbor: 8, entry: Dir1}},
+	{{neighbor: 27}, {neighbor: 7, entry: Dir5}, {neighbor: 8, entry: Dir2, reverse: true}, {neighbor: 22, entry: Dir4, reverse: true}, {neighbor: 21, entry: Dir3, reverse: true}, {neighbor: 16, entry: Dir1}},
+}
+
+// seamTopology lists the bordering playable faces in cyclic order around each
+// square. Together with faceTopology it defines the complete rotation system.
+var seamTopology = [seamCount][4]FaceID{
+	{0, 21, 15, 3},
+	{6, 18, 12, 9},
+	{1, 5, 13, 20},
+	{7, 11, 16, 23},
+	{4, 17, 10, 14},
+	{2, 19, 8, 22},
+}
+
 // NewWorld constructs a world whose playable faces are regular hex maps of
 // the supplied radius.
 func NewWorld(radius int) (*World, error) {
@@ -266,9 +316,16 @@ func (w *World) Move(cell Cell, d LocalDirection) (Cell, error) {
 		return Cell{Face: cell.Face, Hex: next}, nil
 	}
 
-	exit, ok := exitEdge(next, w.radius)
-	if !ok {
-		return cell, fmt.Errorf("wrex: could not determine exit edge: face=%d q=%d r=%d direction=%d", cell.Face, cell.Hex.Q, cell.Hex.R, d)
+	exit := d
+	if _, onExit := edgePosition(cell.Hex, exit, w.radius); !onExit {
+		// A move from a corner can leave through an edge other than d. Derive
+		// that edge from the violated bound; when two bounds are violated and
+		// the cell lies on edge d, the explicit choice above removes ambiguity.
+		var ok bool
+		exit, ok = exitEdge(next, w.radius)
+		if !ok {
+			return cell, fmt.Errorf("wrex: could not determine exit edge: face=%d q=%d r=%d direction=%d", cell.Face, cell.Hex.Q, cell.Hex.R, d)
+		}
 	}
 	edge := w.faces[cell.Face].Edges[exit]
 	if edge.Kind == SeamEdge {
@@ -352,50 +409,27 @@ func (w *World) valid() bool {
 	return w != nil && w.radius >= MinRadius && w.radius <= MaxRadius
 }
 
-// initTopology builds a fixed reciprocal six-neighbor graph over 24 faces and
-// replaces twelve graph joins with the 24 incidences of six square seams.
-// The graph is the package's abstract movement topology; it is not a set of
-// Euclidean vertex coordinates for rendering a solid.
+// initTopology instantiates the authoritative spherical rotation system.
 func (w *World) initTopology() {
 	for i := range w.faces {
 		w.faces[i].ID = FaceID(i)
-	}
-
-	for i := range w.faces {
-		for d := LocalDirection(0); d <= Dir5; d++ {
-			n := latticeNeighbor(i, d)
-			w.faces[i].Edges[d] = Edge{Kind: HexEdge, Face: FaceID(n), Entry: opposite(d), Reverse: true}
+		for d, topology := range faceTopology[i] {
+			if topology.neighbor >= hexFaceCount {
+				w.faces[i].Edges[d] = Edge{Kind: SeamEdge, Seam: SeamID(topology.neighbor - hexFaceCount)}
+				continue
+			}
+			w.faces[i].Edges[d] = Edge{
+				Kind:    HexEdge,
+				Face:    FaceID(topology.neighbor),
+				Entry:   topology.entry,
+				Reverse: topology.reverse,
+			}
 		}
-	}
-
-	// Two removed joins per seam produce four bordering face incidences.
-	blocked := [][2]int{
-		{0, 1}, {6, 7},
-		{2, 3}, {8, 9},
-		{4, 5}, {10, 11},
-		{12, 13}, {18, 19},
-		{14, 15}, {20, 21},
-		{16, 17}, {22, 23},
-	}
-	for i, pair := range blocked {
-		seam := SeamID(i / 2)
-		a, b := pair[0], pair[1]
-		blockJoin(w, FaceID(a), Dir0, FaceID(b), Dir3, seam)
 	}
 
 	for s := range w.seams {
 		w.seams[s].ID = SeamID(s)
-	}
-	counts := [seamCount]int{}
-	for _, face := range w.faces {
-		for _, edge := range face.Edges {
-			if edge.Kind != SeamEdge {
-				continue
-			}
-			i := counts[edge.Seam]
-			w.seams[edge.Seam].Faces[i] = face.ID
-			counts[edge.Seam]++
-		}
+		w.seams[s].Faces = seamTopology[s]
 	}
 
 	w.assignBearing0Directions()
@@ -446,40 +480,6 @@ func (w *World) assignBearing0Directions() {
 		w.faces[i].Bearing0 = best
 	}
 }
-
-func blockJoin(w *World, a FaceID, ad LocalDirection, b FaceID, bd LocalDirection, seam SeamID) {
-	w.faces[a].Edges[ad] = Edge{Kind: SeamEdge, Seam: seam}
-	w.faces[b].Edges[bd] = Edge{Kind: SeamEdge, Seam: seam}
-}
-
-// latticeNeighbor addresses faces as a 6-column by 4-row wrapped axial
-// lattice. It supplies a deterministic reciprocal graph before seam joins are
-// removed.
-func latticeNeighbor(id int, d LocalDirection) int {
-	const cols, rows = 6, 4
-	col, row := id%cols, id/cols
-	switch d {
-	case Dir0:
-		col++
-	case Dir1:
-		col++
-		row--
-	case Dir2:
-		row--
-	case Dir3:
-		col--
-	case Dir4:
-		col--
-		row++
-	case Dir5:
-		row++
-	}
-	col = (col%cols + cols) % cols
-	row = (row%rows + rows) % rows
-	return row*cols + col
-}
-
-func opposite(d LocalDirection) LocalDirection { return (d + 3) % 6 }
 
 func exitEdge(c Coord, radius int) (LocalDirection, bool) {
 	switch {

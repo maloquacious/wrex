@@ -1,11 +1,7 @@
 # ADR 0001: Use square defects instead of pentagonal defects
 
-- Status: Accepted (target design)
+- Status: Accepted
 - Date: 2026-07-14
-
-> This record explains the choice of irregular region. It does not establish
-> that the current implementation realizes the intended closed topology. See
-> [issue #1](https://github.com/maloquacious/wrex/issues/1).
 
 ## Context
 

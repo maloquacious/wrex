@@ -18,9 +18,8 @@ or a renderer, but that does not mean its intended topology is unrelated to a
 sphere or can never support rendering.
 
 > **Experimental status:** the current API is a partial implementation of this
-> model and has known correctness defects. In particular, do not yet rely on
-> the current topology as a closed polyhedron or on compass bearings converging
-> at the poles. See [Current status](#current-status).
+> model. The topology is a closed polyhedron, but do not yet rely on compass
+> bearings converging at the poles. See [Current status](#current-status).
 
 The module path is `github.com/maloquacious/wrex`.
 
@@ -139,9 +138,8 @@ if errors.Is(err, wrex.ErrImpassableSeam) {
 ```
 
 This is not yet the target “neighbor by `CellID` and bearing” operation. The
-current graph and cross-face movement code are tested for their implemented
-behavior, but [issue #1](https://github.com/maloquacious/wrex/issues/1) records
-that the graph is a wrapped lattice rather than the intended closed polyhedron.
+graph is the dual of a class-III (2,1) octahedral subdivision: its 24 hexagons
+and six square defects form a closed spherical polyhedron.
 
 ## Orientation and optional compass semantics
 
@@ -185,15 +183,16 @@ and [ADR 0003](docs/adr/0003-move-compass-semantics-to-child-package.md).
 - validation and encode/decode round trips for ordinary valid cells;
 - local movement within a face and configured edge transitions;
 - `ErrImpassableSeam` at configured blocked edges;
+- a closed 24-hexagon / 6-square topology with spherical Euler characteristic
+  and complete three-face vertex cycles;
 - neutral bearing/local-direction conversion; and
 - optional compass names and polar seam lookup.
 
-These tests verify the implementation's present graph; they do not prove that
-the graph realizes the target spherical topology.
+The topology tests verify reciprocal joins, its complete rotation system,
+three-face vertex cycles, and Euler characteristic.
 
 ### Known correctness and API gaps
 
-- [#1: topology does not represent the intended closed polyhedron](https://github.com/maloquacious/wrex/issues/1).
 - [#2: compass bearings do not reliably reach their designated poles](https://github.com/maloquacious/wrex/issues/2).
 - The target ID-only enumeration and neighbor-by-bearing API is not yet
   implemented; face, coordinate, edge, and local-direction details remain
