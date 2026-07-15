@@ -9,6 +9,10 @@ const (
 	// supported inclusive range [MinRadius, MaxRadius].
 	ErrInvalidRadius = cerrs.Error("wrex: invalid radius")
 
+	// ErrInvalidWorld is returned when an operation requires a World created by
+	// NewWorld but receives an uninitialized or otherwise invalid World.
+	ErrInvalidWorld = cerrs.Error("wrex: invalid world")
+
 	// ErrInvalidCell is returned when a Cell does not identify a playable
 	// coordinate in a World.
 	ErrInvalidCell = cerrs.Error("wrex: invalid cell")

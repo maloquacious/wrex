@@ -176,6 +176,9 @@ func (w *World) Radius() int { return w.radius }
 
 // Faces returns a copy of the 24 playable faces.
 func (w *World) Faces() []Face {
+	if !w.valid() {
+		return nil
+	}
 	faces := make([]Face, len(w.faces))
 	copy(faces, w.faces[:])
 	return faces
@@ -183,6 +186,9 @@ func (w *World) Faces() []Face {
 
 // Seams returns a copy of the six impassable square-face descriptors.
 func (w *World) Seams() []Seam {
+	if !w.valid() {
+		return nil
+	}
 	seams := make([]Seam, len(w.seams))
 	copy(seams, w.seams[:])
 	return seams
@@ -190,7 +196,7 @@ func (w *World) Seams() []Seam {
 
 // Contains reports whether a cell names a playable coordinate in the world.
 func (w *World) Contains(cell Cell) bool {
-	if int(cell.Face) >= len(w.faces) {
+	if !w.valid() || int(cell.Face) >= len(w.faces) {
 		return false
 	}
 
@@ -204,6 +210,9 @@ func (w *World) Contains(cell Cell) bool {
 
 // EncodeCell validates cell and returns its stable packed identifier.
 func (w *World) EncodeCell(cell Cell) (CellID, error) {
+	if !w.valid() {
+		return 0, ErrInvalidWorld
+	}
 	if !w.Contains(cell) {
 		return 0, fmt.Errorf("%w: face=%d q=%d r=%d", ErrInvalidCell, cell.Face, cell.Hex.Q, cell.Hex.R)
 	}
@@ -218,6 +227,9 @@ func (w *World) EncodeCell(cell Cell) (CellID, error) {
 // Reserved bits must be zero, making accidental use of a future encoding fail
 // explicitly rather than decode silently.
 func (w *World) DecodeCell(id CellID) (Cell, error) {
+	if !w.valid() {
+		return Cell{}, ErrInvalidWorld
+	}
 	raw := uint32(id)
 	if raw & ^uint32(cellUsedMask) != 0 {
 		return Cell{}, fmt.Errorf("%w: reserved bits are nonzero: %#08x", ErrInvalidCellID, raw)
@@ -238,6 +250,9 @@ func (w *World) DecodeCell(id CellID) (Cell, error) {
 
 // Move attempts to move one step in direction d.
 func (w *World) Move(cell Cell, d LocalDirection) (Cell, error) {
+	if !w.valid() {
+		return cell, ErrInvalidWorld
+	}
 	if !w.Contains(cell) {
 		return cell, fmt.Errorf("%w: face=%d q=%d r=%d", ErrInvalidCell, cell.Face, cell.Hex.Q, cell.Hex.R)
 	}
@@ -273,6 +288,9 @@ func (w *World) Move(cell Cell, d LocalDirection) (Cell, error) {
 
 // BearingFor converts a face-local direction to a world-relative bearing.
 func (w *World) BearingFor(face FaceID, d LocalDirection) (Bearing, error) {
+	if !w.valid() {
+		return 0, ErrInvalidWorld
+	}
 	if int(face) >= len(w.faces) || d > Dir5 {
 		return 0, fmt.Errorf("wrex: invalid face or local direction: face=%d direction=%d", face, d)
 	}
@@ -283,6 +301,9 @@ func (w *World) BearingFor(face FaceID, d LocalDirection) (Bearing, error) {
 // LocalDirectionFor converts a world-relative bearing to the corresponding
 // local movement direction on face.
 func (w *World) LocalDirectionFor(face FaceID, b Bearing) (LocalDirection, error) {
+	if !w.valid() {
+		return 0, ErrInvalidWorld
+	}
 	if int(face) >= len(w.faces) || b > Bearing5 {
 		return 0, fmt.Errorf("wrex: invalid face or bearing: face=%d bearing=%d", face, b)
 	}
@@ -320,8 +341,15 @@ func Distance(a, b Coord) int {
 
 // CellCount returns the number of playable cells in the world.
 func (w *World) CellCount() int64 {
+	if !w.valid() {
+		return 0
+	}
 	r := int64(w.radius)
 	return hexFaceCount * (1 + 3*r*(r+1))
+}
+
+func (w *World) valid() bool {
+	return w != nil && w.radius >= MinRadius && w.radius <= MaxRadius
 }
 
 // initTopology builds a fixed reciprocal six-neighbor graph over 24 faces and

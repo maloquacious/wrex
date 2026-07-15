@@ -88,9 +88,9 @@ Radius `r` means a face center plus `r` complete rings, or
 `1 + 3r(r + 1)` cells per face. `NewWorld` returns an error wrapping
 `ErrInvalidRadius` for an unsupported radius.
 
-Always construct a world with `NewWorld`. A zero-value `World` is not valid,
-although [issue #3](https://github.com/maloquacious/wrex/issues/3) records that
-some methods currently accept it accidentally.
+Always construct a world with `NewWorld`. A zero-value `World` is invalid:
+cell and navigation operations return `ErrInvalidWorld`, `Contains` returns
+false, and its face and seam collections are empty.
 
 ### Transitional cell addressing and IDs
 
@@ -195,7 +195,6 @@ the graph realizes the target spherical topology.
 
 - [#1: topology does not represent the intended closed polyhedron](https://github.com/maloquacious/wrex/issues/1).
 - [#2: compass bearings do not reliably reach their designated poles](https://github.com/maloquacious/wrex/issues/2).
-- [#3: zero-value worlds are accepted accidentally](https://github.com/maloquacious/wrex/issues/3).
 - The target ID-only enumeration and neighbor-by-bearing API is not yet
   implemented; face, coordinate, edge, and local-direction details remain
   exported.

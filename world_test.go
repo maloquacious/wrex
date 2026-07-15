@@ -43,6 +43,39 @@ func TestNewWorldRadiusRange(t *testing.T) {
 	}
 }
 
+func TestZeroValueWorldIsInvalid(t *testing.T) {
+	var world World
+	cell := Cell{}
+
+	if world.Contains(cell) {
+		t.Error("Contains(Cell{}) = true, want false")
+	}
+	if _, err := world.EncodeCell(cell); !errors.Is(err, ErrInvalidWorld) {
+		t.Errorf("EncodeCell error = %v, want ErrInvalidWorld", err)
+	}
+	if _, err := world.DecodeCell(0); !errors.Is(err, ErrInvalidWorld) {
+		t.Errorf("DecodeCell error = %v, want ErrInvalidWorld", err)
+	}
+	if got, err := world.Move(cell, Dir0); !errors.Is(err, ErrInvalidWorld) || got != cell {
+		t.Errorf("Move = %#v, %v, want original cell and ErrInvalidWorld", got, err)
+	}
+	if _, err := world.BearingFor(0, Dir0); !errors.Is(err, ErrInvalidWorld) {
+		t.Errorf("BearingFor error = %v, want ErrInvalidWorld", err)
+	}
+	if _, err := world.LocalDirectionFor(0, Bearing0); !errors.Is(err, ErrInvalidWorld) {
+		t.Errorf("LocalDirectionFor error = %v, want ErrInvalidWorld", err)
+	}
+	if got := world.Faces(); got != nil {
+		t.Errorf("Faces = %#v, want nil", got)
+	}
+	if got := world.Seams(); got != nil {
+		t.Errorf("Seams = %#v, want nil", got)
+	}
+	if got := world.CellCount(); got != 0 {
+		t.Errorf("CellCount = %d, want 0", got)
+	}
+}
+
 func TestMaximumRadiusCellCount(t *testing.T) {
 	world, _ := NewWorld(MaxRadius)
 	const want int64 = 6_501_624

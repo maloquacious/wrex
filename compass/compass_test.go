@@ -68,3 +68,16 @@ func TestPolarSeamsAreDistinct(t *testing.T) {
 		t.Fatalf("polar seams share ID %d", north.ID)
 	}
 }
+
+func TestZeroValueWorldHasNoPole(t *testing.T) {
+	var world wrex.World
+	if pole, ok := Pole(&world, North); ok {
+		t.Fatalf("Pole = %#v, true, want no pole", pole)
+	}
+	if _, err := LocalDirection(&world, 0, North); !errors.Is(err, wrex.ErrInvalidWorld) {
+		t.Fatalf("LocalDirection error = %v, want ErrInvalidWorld", err)
+	}
+	if _, err := Bearing(&world, 0, wrex.Dir0); !errors.Is(err, wrex.ErrInvalidWorld) {
+		t.Fatalf("Bearing error = %v, want ErrInvalidWorld", err)
+	}
+}
