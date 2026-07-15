@@ -112,11 +112,9 @@ against the receiving world. Reserved high bits must be zero.
 
 This coordinate/face API is a mismatch with the intended ID-only client model:
 the package does not yet enumerate IDs directly, and navigation currently
-requires decoding IDs and using implementation types. In addition,
-[issue #4](https://github.com/maloquacious/wrex/issues/4) documents that
-extreme integer coordinates can wrap during encoding and collide with valid
-IDs. Treat IDs produced from untrusted or unchecked `Cell` values as unsafe
-until that defect is fixed.
+requires decoding IDs and using implementation types. Encoding validates the
+face-local coordinate before packing it, including extreme integer values that
+cannot be represented by the ID format.
 
 ### Transitional navigation
 
@@ -198,7 +196,6 @@ the graph realizes the target spherical topology.
 - [#1: topology does not represent the intended closed polyhedron](https://github.com/maloquacious/wrex/issues/1).
 - [#2: compass bearings do not reliably reach their designated poles](https://github.com/maloquacious/wrex/issues/2).
 - [#3: zero-value worlds are accepted accidentally](https://github.com/maloquacious/wrex/issues/3).
-- [#4: extreme coordinates can collide with valid cell IDs](https://github.com/maloquacious/wrex/issues/4).
 - The target ID-only enumeration and neighbor-by-bearing API is not yet
   implemented; face, coordinate, edge, and local-direction details remain
   exported.

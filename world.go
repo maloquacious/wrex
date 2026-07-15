@@ -190,7 +190,16 @@ func (w *World) Seams() []Seam {
 
 // Contains reports whether a cell names a playable coordinate in the world.
 func (w *World) Contains(cell Cell) bool {
-	return int(cell.Face) < len(w.faces) && Distance(Coord{}, cell.Hex) <= w.radius
+	if int(cell.Face) >= len(w.faces) {
+		return false
+	}
+
+	q, r := cell.Hex.Q, cell.Hex.R
+	if q < -w.radius || q > w.radius || r < -w.radius || r > w.radius {
+		return false
+	}
+	s := q + r
+	return s >= -w.radius && s <= w.radius
 }
 
 // EncodeCell validates cell and returns its stable packed identifier.
@@ -282,12 +291,31 @@ func (w *World) LocalDirectionFor(face FaceID, b Bearing) (LocalDirection, error
 }
 
 // Distance returns the number of hex steps between two axial coordinates on
-// the same face.
+// the same face. If the mathematical distance cannot be represented by an
+// int, Distance returns the largest representable int.
 func Distance(a, b Coord) int {
-	dq := b.Q - a.Q
-	dr := b.R - a.R
-	ds := -dq - dr
-	return (abs(dq) + abs(dr) + abs(ds)) / 2
+	const maxInt = int(^uint(0) >> 1)
+
+	dq, qNegative := differenceMagnitude(a.Q, b.Q)
+	dr, rNegative := differenceMagnitude(a.R, b.R)
+	if dq > uint(maxInt) || dr > uint(maxInt) {
+		return maxInt
+	}
+
+	var ds uint
+	if qNegative == rNegative {
+		ds = dq + dr
+	} else if dq >= dr {
+		ds = dq - dr
+	} else {
+		ds = dr - dq
+	}
+	if ds > uint(maxInt) {
+		return maxInt
+	}
+
+	distance := max(dq, dr, ds)
+	return int(distance)
 }
 
 // CellCount returns the number of playable cells in the world.
@@ -485,9 +513,11 @@ func boundaryCoord(d LocalDirection, position, radius int) Coord {
 	}
 }
 
-func abs(v int) int {
-	if v < 0 {
-		return -v
+// differenceMagnitude returns the magnitude and sign of b-a without
+// performing the potentially overflowing signed subtraction.
+func differenceMagnitude(a, b int) (magnitude uint, negative bool) {
+	if b >= a {
+		return uint(b) - uint(a), false
 	}
-	return v
+	return uint(a) - uint(b), true
 }
