@@ -4,6 +4,7 @@ package wrex
 
 import (
 	"fmt"
+	"sync"
 )
 
 const (
@@ -157,6 +158,13 @@ type World struct {
 	radius int
 	faces  [hexFaceCount]Face
 	seams  [seamCount]Seam
+
+	routeCache *seamRouteCache
+}
+
+type seamRouteCache struct {
+	mu     sync.Mutex
+	routes [seamCount][]uint8
 }
 
 // topologyEdge is one entry in the authoritative edge table below. Neighbor
@@ -216,7 +224,7 @@ func NewWorld(radius int) (*World, error) {
 		return nil, fmt.Errorf("%w: got %d, want %d <= radius <= %d", ErrInvalidRadius, radius, MinRadius, MaxRadius)
 	}
 
-	w := &World{radius: radius}
+	w := &World{radius: radius, routeCache: &seamRouteCache{}}
 	w.initTopology()
 	return w, nil
 }
@@ -310,37 +318,184 @@ func (w *World) Move(cell Cell, d LocalDirection) (Cell, error) {
 		return cell, fmt.Errorf("wrex: invalid direction: %d", d)
 	}
 
+	next, seam, exit, blocked, err := w.moveValid(cell, d)
+	if err != nil {
+		return cell, err
+	}
+	if blocked {
+		return cell, &ImpassableSeamError{
+			Seam:      seam,
+			Cell:      cell,
+			Direction: d,
+			Exit:      exit,
+		}
+	}
+	return next, nil
+}
+
+func (w *World) moveValid(cell Cell, d LocalDirection) (Cell, SeamID, LocalDirection, bool, error) {
 	delta := d.Delta()
 	next := Coord{Q: cell.Hex.Q + delta.Q, R: cell.Hex.R + delta.R}
 	if Distance(Coord{}, next) <= w.radius {
-		return Cell{Face: cell.Face, Hex: next}, nil
+		return Cell{Face: cell.Face, Hex: next}, 0, 0, false, nil
 	}
 
 	exit := d
 	if _, onExit := edgePosition(cell.Hex, exit, w.radius); !onExit {
-		// A move from a corner can leave through an edge other than d. Derive
-		// that edge from the violated bound; when two bounds are violated and
-		// the cell lies on edge d, the explicit choice above removes ambiguity.
 		var ok bool
 		exit, ok = exitEdge(next, w.radius)
 		if !ok {
-			return cell, fmt.Errorf("wrex: could not determine exit edge: face=%d q=%d r=%d direction=%d", cell.Face, cell.Hex.Q, cell.Hex.R, d)
+			return cell, 0, 0, false, fmt.Errorf("wrex: could not determine exit edge: face=%d q=%d r=%d direction=%d", cell.Face, cell.Hex.Q, cell.Hex.R, d)
 		}
 	}
 	edge := w.faces[cell.Face].Edges[exit]
 	if edge.Kind == SeamEdge {
-		return cell, fmt.Errorf("%w: seam=%d face=%d direction=%d edge=%d", ErrImpassableSeam, edge.Seam, cell.Face, d, exit)
+		return cell, edge.Seam, exit, true, nil
 	}
 
 	position, ok := edgePosition(cell.Hex, exit, w.radius)
 	if !ok {
-		return cell, fmt.Errorf("wrex: coordinate is not on exit edge: face=%d q=%d r=%d direction=%d edge=%d", cell.Face, cell.Hex.Q, cell.Hex.R, d, exit)
+		return cell, 0, 0, false, fmt.Errorf("wrex: coordinate is not on exit edge: face=%d q=%d r=%d direction=%d edge=%d", cell.Face, cell.Hex.Q, cell.Hex.R, d, exit)
 	}
 	if edge.Reverse {
 		position = w.radius - position
 	}
 
-	return Cell{Face: edge.Face, Hex: boundaryCoord(edge.Entry, position, w.radius)}, nil
+	return Cell{Face: edge.Face, Hex: boundaryCoord(edge.Entry, position, w.radius)}, 0, 0, false, nil
+}
+
+// DirectionTowardSeam returns a local direction on the shortest playable path
+// from cell to an edge of seam. Recomputing the direction at each cell is
+// required: no single local direction per face can represent a convergent
+// route over the curved topology.
+//
+// Moving in the returned direction either reaches a cell one step closer to
+// seam or returns an ImpassableSeamError identifying seam when the route has
+// arrived.
+func (w *World) DirectionTowardSeam(cell Cell, seam SeamID) (LocalDirection, error) {
+	if !w.valid() {
+		return 0, ErrInvalidWorld
+	}
+	if !w.Contains(cell) {
+		return 0, fmt.Errorf("%w: face=%d q=%d r=%d", ErrInvalidCell, cell.Face, cell.Hex.Q, cell.Hex.R)
+	}
+	if seam >= seamCount {
+		return 0, fmt.Errorf("wrex: invalid seam: %d", seam)
+	}
+
+	w.routeCache.mu.Lock()
+	defer w.routeCache.mu.Unlock()
+	if w.routeCache.routes[seam] == nil {
+		route, err := w.buildSeamRoute(seam)
+		if err != nil {
+			return 0, err
+		}
+		w.routeCache.routes[seam] = route
+	}
+	return LocalDirection(w.routeCache.routes[seam][w.cellRouteIndex(cell)]), nil
+}
+
+func (w *World) buildSeamRoute(seam SeamID) ([]uint8, error) {
+	const (
+		unvisited = int32(-1)
+		noRoute   = uint8(0xff)
+	)
+
+	side := 2*w.radius + 1
+	entryCount := hexFaceCount * side * side
+	distance := make([]int32, entryCount)
+	for i := range distance {
+		distance[i] = unvisited
+	}
+	queue := make([]uint32, 0, w.CellCount())
+
+	for _, face := range w.seams[seam].Faces {
+		for d, edge := range w.faces[face].Edges {
+			if edge.Kind != SeamEdge || edge.Seam != seam {
+				continue
+			}
+			for position := 0; position <= w.radius; position++ {
+				cell := Cell{Face: face, Hex: boundaryCoord(LocalDirection(d), position, w.radius)}
+				index := w.cellRouteIndex(cell)
+				if distance[index] == unvisited {
+					distance[index] = 0
+					queue = append(queue, uint32(index))
+				}
+			}
+		}
+	}
+
+	for head := 0; head < len(queue); head++ {
+		cell := w.routeCell(int(queue[head]))
+		for d := Dir0; d <= Dir5; d++ {
+			next, _, _, blocked, err := w.moveValid(cell, d)
+			if err != nil {
+				return nil, err
+			}
+			if blocked {
+				continue
+			}
+			index := w.cellRouteIndex(next)
+			if distance[index] != unvisited {
+				continue
+			}
+			distance[index] = distance[queue[head]] + 1
+			queue = append(queue, uint32(index))
+		}
+	}
+
+	if int64(len(queue)) != w.CellCount() {
+		return nil, fmt.Errorf("wrex: seam %d route reached %d of %d cells", seam, len(queue), w.CellCount())
+	}
+
+	route := make([]uint8, entryCount)
+	for i := range route {
+		route[i] = noRoute
+	}
+	for _, rawIndex := range queue {
+		index := int(rawIndex)
+		cell := w.routeCell(index)
+		for d := Dir0; d <= Dir5; d++ {
+			next, blockedSeam, _, blocked, err := w.moveValid(cell, d)
+			if err != nil {
+				return nil, err
+			}
+			if blocked {
+				if blockedSeam == seam {
+					route[index] = uint8(d)
+					break
+				}
+				continue
+			}
+			if distance[index] > 0 && distance[w.cellRouteIndex(next)] == distance[index]-1 {
+				route[index] = uint8(d)
+				break
+			}
+		}
+		if route[index] == noRoute {
+			return nil, fmt.Errorf("wrex: no route from face=%d q=%d r=%d to seam=%d", cell.Face, cell.Hex.Q, cell.Hex.R, seam)
+		}
+	}
+	return route, nil
+}
+
+func (w *World) cellRouteIndex(cell Cell) int {
+	side := 2*w.radius + 1
+	return int(cell.Face)*side*side + (cell.Hex.Q+w.radius)*side + cell.Hex.R + w.radius
+}
+
+func (w *World) routeCell(index int) Cell {
+	side := 2*w.radius + 1
+	faceSize := side * side
+	face := index / faceSize
+	coordinate := index % faceSize
+	return Cell{
+		Face: FaceID(face),
+		Hex: Coord{
+			Q: coordinate/side - w.radius,
+			R: coordinate%side - w.radius,
+		},
+	}
 }
 
 // BearingFor converts a face-local direction to a world-relative bearing.

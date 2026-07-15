@@ -26,35 +26,64 @@ func TestBearingRoundTrip(t *testing.T) {
 	}
 }
 
-func TestNorthPoleIsInaccessibleAndNorthConverges(t *testing.T) {
+func TestPolarDirectionsConvergeFromEveryCell(t *testing.T) {
 	world, _ := wrex.NewWorld(3)
-	pole, ok := Pole(world, North)
-	if !ok || pole.ID != NorthPoleSeam {
-		t.Fatalf("north pole = %#v, %v", pole, ok)
+	for _, test := range []struct {
+		name    string
+		bearing wrex.Bearing
+		seam    wrex.SeamID
+	}{
+		{name: "north", bearing: North, seam: NorthPoleSeam},
+		{name: "south", bearing: South, seam: SouthPoleSeam},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, face := range world.Faces() {
+				for q := -world.Radius(); q <= world.Radius(); q++ {
+					for r := -world.Radius(); r <= world.Radius(); r++ {
+						start := wrex.Cell{Face: face.ID, Hex: wrex.Coord{Q: q, R: r}}
+						if !world.Contains(start) {
+							continue
+						}
+						assertConvergesOnSeam(t, world, start, test.bearing, test.seam)
+					}
+				}
+			}
+		})
 	}
+}
 
-	for _, startingFace := range world.Faces() {
-		cell := wrex.Cell{Face: startingFace.ID}
-		blocked := false
-		for steps := 0; steps < 1_000; steps++ {
-			d, err := LocalDirection(world, cell.Face, North)
-			if err != nil {
-				t.Fatal(err)
-			}
-			next, err := world.Move(cell, d)
-			if errors.Is(err, wrex.ErrImpassableSeam) {
-				blocked = true
-				break
-			}
-			if err != nil {
-				t.Fatalf("northward move from face %d: %v", startingFace.ID, err)
-			}
+func assertConvergesOnSeam(t *testing.T, world *wrex.World, start wrex.Cell, bearing wrex.Bearing, wantSeam wrex.SeamID) {
+	t.Helper()
+	cell := start
+	visited := make(map[wrex.Cell]struct{})
+	for steps := int64(0); steps <= world.CellCount(); steps++ {
+		if _, exists := visited[cell]; exists {
+			t.Fatalf("bearing %d from %#v cycles at %#v", bearing, start, cell)
+		}
+		visited[cell] = struct{}{}
+
+		direction, err := DirectionTowardPole(world, cell, bearing)
+		if err != nil {
+			t.Fatalf("DirectionTowardPole(%#v, %d): %v", cell, bearing, err)
+		}
+		next, err := world.Move(cell, direction)
+		if err == nil {
 			cell = next
+			continue
 		}
-		if !blocked {
-			t.Fatalf("northward travel from face %d did not converge", startingFace.ID)
+		var blocked *wrex.ImpassableSeamError
+		if !errors.As(err, &blocked) {
+			t.Fatalf("move from %#v: %v", cell, err)
 		}
+		if blocked.Seam != wantSeam {
+			t.Fatalf("bearing %d from %#v reached seam %d, want %d", bearing, start, blocked.Seam, wantSeam)
+		}
+		if next != cell {
+			t.Fatalf("blocked move returned %#v, want %#v", next, cell)
+		}
+		return
 	}
+	t.Fatalf("bearing %d from %#v did not converge", bearing, start)
 }
 
 func TestPolarSeamsAreDistinct(t *testing.T) {

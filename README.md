@@ -18,8 +18,9 @@ or a renderer, but that does not mean its intended topology is unrelated to a
 sphere or can never support rendering.
 
 > **Experimental status:** the current API is a partial implementation of this
-> model. The topology is a closed polyhedron, but do not yet rely on compass
-> bearings converging at the poles. See [Current status](#current-status).
+> model. The topology is a closed polyhedron. Face-level bearing conversion is
+> not a convergent routing policy; polar convergence is provided separately by
+> `compass.DirectionTowardPole`. See [Current status](#current-status).
 
 The module path is `github.com/maloquacious/wrex`.
 
@@ -119,21 +120,25 @@ cannot be represented by the ID format.
 
 `World.Move` accepts a `Cell` and a face-local `LocalDirection`. An in-face step
 adds the corresponding axial vector; an edge step applies the stored face-edge
-transform. A step toward an inaccessible seam returns an error wrapping
+transform. A step toward an inaccessible seam returns an
+`*ImpassableSeamError` that identifies the seam and wraps
 `ErrImpassableSeam`.
 
-The root package also exposes neutral `Bearing0` through `Bearing5`. Because a
-bearing is world-relative rather than an axial vector, clients of the current
-API must convert it on the cell's current face before every step:
+The root package also exposes neutral `Bearing0` through `Bearing5` and a
+face-level reference-frame conversion. A convergent route over the curved
+topology cannot be represented by one fixed local direction per face. Clients
+navigating toward an inaccessible region instead recompute a cell-dependent
+direction before every step:
 
 ```go
-local, err := world.LocalDirectionFor(cell.Face, wrex.Bearing0)
+local, err := world.DirectionTowardSeam(cell, targetSeam)
 if err != nil {
     return err
 }
 next, err := world.Move(cell, local)
-if errors.Is(err, wrex.ErrImpassableSeam) {
-    // The requested neighbor is a hidden non-standard region.
+var blocked *wrex.ImpassableSeamError
+if errors.As(err, &blocked) && blocked.Seam == targetSeam {
+    // The route has reached the requested hidden non-standard region.
 }
 ```
 
@@ -157,18 +162,18 @@ package interprets them clockwise as:
 | `Bearing5` | `compass.Northwest` |
 
 The compass package designates seam 0 as the north pole and seam 3 as the south
-pole. Layout controls only how these bearings are drawn:
+pole. `compass.DirectionTowardPole` returns the next direction on a shortest
+route to either pole and must be called at every cell. Layout controls only how
+bearings are drawn:
 
 - for **flat-top** hexagons, north is the single upward direction;
 - for **pointy-top** hexagons, northwest and northeast are the two upward
   directions.
 
-Those screen directions do not replace world-relative semantics. In the target
-model, repeatedly choosing north should approach the north irregular point, and
-choosing south from near the south pole should continue toward that pole—not
-turn away because of a face-local drawing orientation. The current orientation
-assignment does not reliably provide this behavior; see
-[issue #2](https://github.com/maloquacious/wrex/issues/2).
+Those screen directions do not replace world-relative semantics. Repeatedly
+following `DirectionTowardPole` with north reaches seam 0, and following it
+with south reaches seam 3. The tests verify both routes from every cell in a
+radius-3 world and reject cycles or arrival at the wrong seam.
 
 The separation between neutral bearings and optional compass names is recorded
 in [ADR 0002](docs/adr/0002-separate-local-directions-from-global-bearings.md)
@@ -182,18 +187,18 @@ and [ADR 0003](docs/adr/0003-move-compass-semantics-to-child-package.md).
 - compact `Cell`, `Coord`, and 32-bit `CellID` value types;
 - validation and encode/decode round trips for ordinary valid cells;
 - local movement within a face and configured edge transitions;
-- `ErrImpassableSeam` at configured blocked edges;
+- typed `ImpassableSeamError` values at configured blocked edges;
 - a closed 24-hexagon / 6-square topology with spherical Euler characteristic
   and complete three-face vertex cycles;
-- neutral bearing/local-direction conversion; and
-- optional compass names and polar seam lookup.
+- neutral bearing/local-direction reference-frame conversion;
+- cell-dependent shortest routes toward every seam; and
+- optional compass names, polar seam lookup, and polar routing.
 
 The topology tests verify reciprocal joins, its complete rotation system,
 three-face vertex cycles, and Euler characteristic.
 
-### Known correctness and API gaps
+### Known API gaps
 
-- [#2: compass bearings do not reliably reach their designated poles](https://github.com/maloquacious/wrex/issues/2).
 - The target ID-only enumeration and neighbor-by-bearing API is not yet
   implemented; face, coordinate, edge, and local-direction details remain
   exported.

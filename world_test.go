@@ -65,6 +65,9 @@ func TestZeroValueWorldIsInvalid(t *testing.T) {
 	if _, err := world.LocalDirectionFor(0, Bearing0); !errors.Is(err, ErrInvalidWorld) {
 		t.Errorf("LocalDirectionFor error = %v, want ErrInvalidWorld", err)
 	}
+	if _, err := world.DirectionTowardSeam(cell, 0); !errors.Is(err, ErrInvalidWorld) {
+		t.Errorf("DirectionTowardSeam error = %v, want ErrInvalidWorld", err)
+	}
 	if got := world.Faces(); got != nil {
 		t.Errorf("Faces = %#v, want nil", got)
 	}
@@ -223,6 +226,123 @@ func TestMoveIntoSeamIsBlocked(t *testing.T) {
 	if got != start {
 		t.Fatalf("blocked Move = %#v, want %#v", got, start)
 	}
+	var blocked *ImpassableSeamError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("Move error type = %T, want *ImpassableSeamError", err)
+	}
+	if blocked.Seam != 0 || blocked.Cell != start || blocked.Direction != Dir0 || blocked.Exit != Dir0 {
+		t.Fatalf("ImpassableSeamError = %#v", blocked)
+	}
+}
+
+func TestImpassableSeamErrorReportsCornerExit(t *testing.T) {
+	world, _ := NewWorld(3)
+	start := Cell{Face: 0, Hex: Coord{Q: 3, R: -1}}
+	_, err := world.Move(start, Dir1)
+	var blocked *ImpassableSeamError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("Move error = %v, want ImpassableSeamError", err)
+	}
+	if blocked.Direction != Dir1 || blocked.Exit != Dir0 || blocked.Seam != 0 {
+		t.Fatalf("ImpassableSeamError = %#v, want direction=1 exit=0 seam=0", blocked)
+	}
+}
+
+func TestEverySuccessfulMoveIsReversible(t *testing.T) {
+	world, _ := NewWorld(3)
+	for _, cell := range allCells(world) {
+		for direction := Dir0; direction <= Dir5; direction++ {
+			next, err := world.Move(cell, direction)
+			if errors.Is(err, ErrImpassableSeam) {
+				continue
+			}
+			if err != nil {
+				t.Fatalf("Move(%#v, %d): %v", cell, direction, err)
+			}
+
+			reversible := false
+			for reverse := Dir0; reverse <= Dir5; reverse++ {
+				previous, reverseErr := world.Move(next, reverse)
+				if reverseErr == nil && previous == cell {
+					reversible = true
+					break
+				}
+			}
+			if !reversible {
+				t.Fatalf("Move(%#v, %d) = %#v has no reverse move", cell, direction, next)
+			}
+		}
+	}
+}
+
+func TestDirectionTowardEverySeamIsShortest(t *testing.T) {
+	world, _ := NewWorld(3)
+	cells := allCells(world)
+	for _, seam := range world.Seams() {
+		distance := make(map[Cell]int, len(cells))
+		queue := make([]Cell, 0, len(cells))
+		for _, cell := range cells {
+			for direction := Dir0; direction <= Dir5; direction++ {
+				_, err := world.Move(cell, direction)
+				var blocked *ImpassableSeamError
+				if errors.As(err, &blocked) && blocked.Seam == seam.ID {
+					distance[cell] = 0
+					queue = append(queue, cell)
+					break
+				}
+			}
+		}
+		for head := 0; head < len(queue); head++ {
+			cell := queue[head]
+			for direction := Dir0; direction <= Dir5; direction++ {
+				next, err := world.Move(cell, direction)
+				if err != nil {
+					continue
+				}
+				if _, seen := distance[next]; seen {
+					continue
+				}
+				distance[next] = distance[cell] + 1
+				queue = append(queue, next)
+			}
+		}
+		if len(distance) != len(cells) {
+			t.Fatalf("seam %d reference route reached %d of %d cells", seam.ID, len(distance), len(cells))
+		}
+
+		for _, cell := range cells {
+			direction, err := world.DirectionTowardSeam(cell, seam.ID)
+			if err != nil {
+				t.Fatalf("DirectionTowardSeam(%#v, %d): %v", cell, seam.ID, err)
+			}
+			next, err := world.Move(cell, direction)
+			if distance[cell] == 0 {
+				var blocked *ImpassableSeamError
+				if !errors.As(err, &blocked) || blocked.Seam != seam.ID {
+					t.Fatalf("route from %#v at distance zero reached %#v, %v", cell, next, err)
+				}
+				continue
+			}
+			if err != nil || distance[next] != distance[cell]-1 {
+				t.Fatalf("route from %#v at distance %d moved to %#v at distance %d: %v", cell, distance[cell], next, distance[next], err)
+			}
+		}
+	}
+}
+
+func allCells(world *World) []Cell {
+	cells := make([]Cell, 0, world.CellCount())
+	for _, face := range world.Faces() {
+		for q := -world.Radius(); q <= world.Radius(); q++ {
+			for r := -world.Radius(); r <= world.Radius(); r++ {
+				cell := Cell{Face: face.ID, Hex: Coord{Q: q, R: r}}
+				if world.Contains(cell) {
+					cells = append(cells, cell)
+				}
+			}
+		}
+	}
+	return cells
 }
 
 func TestTopologyCountsAndReciprocity(t *testing.T) {
