@@ -2,7 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-07-14
-- Supersedes: the API placement chosen in ADR 0002
+- Supersedes: ADR 0002's API placement, pole-role placement, and alias-retention decisions
+
+> The package separation described here is implemented. Polar convergence is
+> not yet correct; see [issue #2](https://github.com/maloquacious/wrex/issues/2).
 
 ## Context
 
@@ -42,10 +45,11 @@ The child package `github.com/maloquacious/wrex/compass` will provide:
 - conversion helpers phrased in compass terminology;
 - polar seam lookup.
 
-The topology continues to orient `Bearing0` as a shortest-path gradient toward
-seam 0. The root package describes that only as a reference orientation. The
-`compass` package interprets it as geographic north and seam 0 as the north
-pole.
+The current topology attempts to orient `Bearing0` as a shortest-path gradient
+toward seam 0. The root package describes that only as a reference orientation.
+The `compass` package interprets it as geographic north and seam 0 as the north
+pole. This placement decision remains valid even though the current gradient
+does not reliably converge on the designated poles.
 
 ## Consequences
 

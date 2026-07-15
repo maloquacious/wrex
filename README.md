@@ -1,113 +1,100 @@
-# wrex
+# Wrex
 
-`wrex` is an experimental Go package for a finite fantasy world built from a
-closed **24-hexagon / 6-square polyhedral topology**.
+Wrex is an experimental, game-agnostic Go package for defining and navigating
+a finite, sphere-like world of regular hexagonal cells. It is intended for
+games that need a lightweight global hex grid and can tolerate a small, fixed
+number of inaccessible irregular locations.
 
-The world has:
+The project began for a fantasy game, but fantasy rules and terminology are not
+part of the package. Wrex supplies cell identity and topology/navigation
+operations. Applications own persistence, terrain, entities, movement costs,
+and all other game state.
 
-- 24 playable hexagonal regions;
-- 6 inaccessible square regions;
-- 30 polyhedral faces total.
+A true sphere cannot be tiled entirely with regular hexagons: some non-hexagonal
+regions are mathematically unavoidable. Wrex's target abstraction exposes every
+regular hexagon as a playable cell and hides six non-standard regions behind
+navigation errors. The package does not currently provide geometric vertices
+or a renderer, but that does not mean its intended topology is unrelated to a
+sphere or can never support rendering.
 
-This is the combinatorial form associated with an octahedral Goldberg-style
-world at the `(2,1)` scale. `wrex` currently models adjacency and movement, not
-Euclidean vertex coordinates or a renderable solid.
+> **Experimental status:** the current API is a partial implementation of this
+> model and has known correctness defects. In particular, do not yet rely on
+> the current topology as a closed polyhedron or on compass bearings converging
+> at the poles. See [Current status](#current-status).
 
-The six square faces are permanently inaccessible terrain. In the package they
-are represented as **seams**: topology metadata that blocks movement, not maps
-that can contain players.
+The module path is `github.com/maloquacious/wrex`.
 
-Architecture decisions are recorded in [`docs/adr`](docs/adr).
+## Scope
 
-The Go module path is:
+### Target client model
 
-```text
-github.com/maloquacious/wrex
-```
+Wrex is intended to let a client:
 
-## Creating a world
+- enumerate every playable cell as a stable exported `CellID`;
+- ask for the neighboring cell in one of six world-relative bearings;
+- receive a defined error when that step encounters a hidden non-standard
+  region; and
+- build storage, simulation, and game rules on top of that cell graph.
+
+Face-local coordinates, face boundaries, and edge transforms are needed to
+implement the graph, but are not intended to be the primary client model.
+
+### Non-goals
+
+Wrex does not own:
+
+- client persistence, maps, entities, or other game state;
+- fantasy-game-specific rules, names, terrain, climate, or movement costs;
+- pathfinding or simulation policy;
+- a claim that a true sphere can consist exclusively of regular hexagons; or
+- currently, Euclidean geometry, mesh generation, projection, or rendering.
+
+## Core model and terminology
+
+| Term | Meaning |
+|---|---|
+| **Cell** | One playable regular hexagon. In the target API clients identify it only by `CellID`; the current API also exports its implementation address as `Cell{Face, Hex}`. |
+| **Cell ID** | A stable value identifying one playable cell. It is suitable for application records and references, subject to the current encoding defect described below. |
+| **Neighbor** | The location reached by one topological step from a cell in a bearing. A requested neighbor may instead be a hidden irregular point, in which case navigation fails with a defined error. |
+| **Bearing** | One of six world-relative orientation sectors. Unlike a face-local direction, its meaning is intended to remain consistent across face boundaries. |
+| **Face** | An implementation patch containing a finite axial hex map. Faces partition cells so the topology can be represented compactly; they are not intended as gameplay maps. |
+| **Edge** | One side of an implementation face. Crossing it either transforms the address onto an adjacent face or encounters an inaccessible region. An edge is not the side of an individual cell in this documentation. |
+| **Seam** | Current topology metadata representing one inaccessible square region and the face edges incident to it. A seam contains no playable cells. Future APIs may hide this representation completely. |
+| **Irregular point** | The client-level concept for an unavoidable non-hexagonal location. It is not a playable cell and has no `CellID`; attempting to enter it must return an error. The current implementation represents each one as a square `Seam`. |
+
+The intended model uses 24 playable hexagonal implementation faces and six
+hidden square irregular regions. The choice of square rather than pentagonal
+defects is explained by [ADR 0001](docs/adr/0001-use-square-defects.md). That is
+design rationale, not evidence that the current face graph is correct.
+
+## Current API
+
+### Creating a world
 
 ```go
-package main
-
-import (
-    "fmt"
-
-    "github.com/maloquacious/wrex"
-)
-
-func main() {
-    world, err := wrex.NewWorld(3)
-    if err != nil {
-        panic(err)
-    }
-
-    fmt.Println(world.Radius())      // 3
-    fmt.Println(len(world.Faces())) // 24
-    fmt.Println(len(world.Seams())) // 6
-    fmt.Println(world.CellCount())  // 888
+world, err := wrex.NewWorld(3)
+if err != nil {
+    panic(err)
 }
+
+fmt.Println(world.Radius())      // 3
+fmt.Println(len(world.Faces())) // 24 implementation faces
+fmt.Println(len(world.Seams())) // 6 inaccessible regions
+fmt.Println(world.CellCount())  // 888
 ```
 
-`NewWorld(radius int)` returns `(*World, error)`. The radius range remains:
+Supported radii are `MinRadius` through `MaxRadius`, currently 3 through 300.
+Radius `r` means a face center plus `r` complete rings, or
+`1 + 3r(r + 1)` cells per face. `NewWorld` returns an error wrapping
+`ErrInvalidRadius` for an unsupported radius.
 
-```text
-3 <= radius <= 300
-```
+Always construct a world with `NewWorld`. A zero-value `World` is not valid,
+although [issue #3](https://github.com/maloquacious/wrex/issues/3) records that
+some methods currently accept it accidentally.
 
-The upper bound is a round, practical limit slightly above the Earth-area
-equivalent radius of approximately 286 when each cell has a 5 km apothem.
+### Transitional cell addressing and IDs
 
-The package exports `MinRadius` and `MaxRadius`. An out-of-range value returns
-an error wrapping `ErrInvalidRadius`.
-
-## Radius and cell counts
-
-The radius convention is:
-
-- radius 3 means the center plus three complete rings;
-- radius `r` means the center plus `r` complete rings.
-
-One playable face contains:
-
-```text
-1 + 3r(r + 1)
-```
-
-At radius 3:
-
-```text
-1 + 3(3)(4) = 37 cells per face
-24 × 37 = 888 playable cells
-```
-
-The seams contain no cells and do not contribute to the count.
-
-`CellCount` returns `int64`. `World` does not allocate every possible cell; it
-stores only the radius, 24 face descriptors, and 6 seam descriptors. Cells and
-`CellID` values are compact values created as needed.
-
-## Cell addresses and stable IDs
-
-A playable location combines a face ID with a coordinate local to that face:
-
-```go
-type Cell struct {
-    Face FaceID
-    Hex  Coord
-}
-```
-
-There is no valid `Cell` on a square seam.
-
-For storage, APIs, events, URLs, and foreign keys, Wrex also provides a stable
-32-bit identifier:
-
-```go
-type CellID uint32
-```
-
-Use the world to encode and decode IDs:
+The current implementation publicly exposes its face-local address:
 
 ```go
 cell := wrex.Cell{
@@ -116,212 +103,119 @@ cell := wrex.Cell{
 }
 
 id, err := world.EncodeCell(cell)
-if err != nil {
-    // errors.Is(err, wrex.ErrInvalidCell)
-    panic(err)
-}
-
 sameCell, err := world.DecodeCell(id)
-if err != nil {
-    // errors.Is(err, wrex.ErrInvalidCellID)
-    panic(err)
-}
 ```
 
-### CellID bit layout
+`CellID` is a packed `uint32` containing a face and biased axial `q` and `r`
+coordinates. IDs do not include the world radius, so decoding validates the ID
+against the receiving world. Reserved high bits must be zero.
 
-`CellID` packs `(face, q, r)` directly. It is deterministic and requires no
-registry or database lookup.
+This coordinate/face API is a mismatch with the intended ID-only client model:
+the package does not yet enumerate IDs directly, and navigation currently
+requires decoding IDs and using implementation types. In addition,
+[issue #4](https://github.com/maloquacious/wrex/issues/4) documents that
+extreme integer coordinates can wrap during encoding and collide with valid
+IDs. Treat IDs produced from untrusted or unchecked `Cell` values as unsafe
+until that defect is fixed.
 
-```text
-31             25 24          20 19          10 9            0
-+----------------+--------------+--------------+--------------+
-| reserved: 0    | face (5 bit) | q + 300      | r + 300      |
-| 7 bits         |              | 10 bits      | 10 bits      |
-+----------------+--------------+--------------+--------------+
-```
+### Transitional navigation
 
-The fields are:
+`World.Move` accepts a `Cell` and a face-local `LocalDirection`. An in-face step
+adds the corresponding axial vector; an edge step applies the stored face-edge
+transform. A step toward an inaccessible seam returns an error wrapping
+`ErrImpassableSeam`.
 
-| Bits | Width | Meaning |
-|---:|---:|---|
-| 0–9 | 10 | `r + 300`, in the encoded range 0–600 |
-| 10–19 | 10 | `q + 300`, in the encoded range 0–600 |
-| 20–24 | 5 | playable face ID, 0–23 |
-| 25–31 | 7 | reserved; currently required to be zero |
-
-Ten bits can represent 0–1023, which comfortably contains the biased coordinate
-range 0–600. Five bits can represent 0–31, which contains all 24 playable
-faces. Only 25 of the 32 bits are currently used.
-
-The encoding is stable across world radii. A cell that exists in both a
-radius-3 and radius-300 world receives the same ID. The radius is therefore not
-part of the ID; decoding validates that the represented coordinate exists in
-the particular `World` used for decoding.
-
-Not every possible 25-bit pattern is a valid cell. Decoding rejects:
-
-- face values 24–31;
-- axial coordinates outside the world's radius;
-- coordinate pairs outside the hexagonal face even when each component is in
-  range;
-- IDs with any reserved high bit set.
-
-This strict validation leaves the high seven bits available for a future,
-explicitly versioned extension without silently reinterpreting old data.
-
-### Why 32 bits are sufficient
-
-At the maximum radius of 300, each face contains:
-
-```text
-1 + 3(300)(301) = 270,901 cells
-```
-
-Across 24 playable faces:
-
-```text
-24 × 270,901 = 6,501,624 cells
-```
-
-A sequential ID would already fit easily in a `uint32`. Packing the coordinates
-instead gives the ID useful structure while remaining compact. Use `uint64`
-only at an external boundary that standardizes all identifiers on 64 bits; it
-is not required by Wrex's address space.
-
-## Local coordinates and directions
-
-Each playable face uses its own axial coordinate frame `(q, r)`. The omitted
-cube coordinate is:
-
-```text
-s = -q - r
-```
-
-The center is `(0, 0)`. The six coordinate operations are deliberately neutral:
-
-| Local direction | Δq | Δr | Conventional drawing only |
-|---|---:|---:|---|
-| `Dir0` | +1 | 0 | right |
-| `Dir1` | +1 | -1 | upper right |
-| `Dir2` | 0 | -1 | upper left |
-| `Dir3` | -1 | 0 | left |
-| `Dir4` | -1 | +1 | lower left |
-| `Dir5` | 0 | +1 | lower right |
-
-The values proceed counterclockwise around one face. They are coordinate
-operations, not compass directions. Movement within a face is vector addition:
-
-```text
-next.q = current.q + Δq
-next.r = current.r + Δr
-```
-
-The root package intentionally exports no constants named `North`, `East`, or
-similar. A local direction can correspond to a different geographic bearing on
-each polyhedral face.
-
-## Neutral world-relative bearings
-
-The root package also defines six neutral world-relative sectors:
-
-```go
-type Bearing uint8
-
-const (
-    Bearing0 Bearing = iota
-    Bearing1
-    Bearing2
-    Bearing3
-    Bearing4
-    Bearing5
-)
-```
-
-A face stores the local direction corresponding to `Bearing0`:
-
-```go
-type Face struct {
-    ID       FaceID
-    Bearing0 LocalDirection
-    Edges    [6]Edge
-}
-```
-
-The remaining bearing-to-direction relationships follow by 60-degree rotation.
-Use the root package conversion methods when an application wants a neutral
-world-relative frame without assigning compass semantics:
+The root package also exposes neutral `Bearing0` through `Bearing5`. Because a
+bearing is world-relative rather than an axial vector, clients of the current
+API must convert it on the cell's current face before every step:
 
 ```go
 local, err := world.LocalDirectionFor(cell.Face, wrex.Bearing0)
-bearing, err := world.BearingFor(cell.Face, wrex.Dir2)
-```
-
-A bearing is not itself an axial movement vector. Recompute the local direction
-after crossing to another face.
-
-## Compass child package
-
-Geographic interpretation lives in the optional child package:
-
-```text
-github.com/maloquacious/wrex/compass
-```
-
-It adopts this convention:
-
-| Compass name | Core bearing |
-|---|---|
-| `compass.North` | `wrex.Bearing0` |
-| `compass.Northeast` | `wrex.Bearing1` |
-| `compass.Southeast` | `wrex.Bearing2` |
-| `compass.South` | `wrex.Bearing3` |
-| `compass.Southwest` | `wrex.Bearing4` |
-| `compass.Northwest` | `wrex.Bearing5` |
-
-Example:
-
-```go
-import (
-    "errors"
-
-    "github.com/maloquacious/wrex"
-    "github.com/maloquacious/wrex/compass"
-)
-
-func moveNorth(world *wrex.World, cell wrex.Cell) (wrex.Cell, error) {
-    local, err := compass.LocalDirection(world, cell.Face, compass.North)
-    if err != nil {
-        return cell, err
-    }
-
-    next, err := world.Move(cell, local)
-    if errors.Is(err, wrex.ErrImpassableSeam) {
-        return cell, err // the polar region or another blocked square seam
-    }
-    return next, err
+if err != nil {
+    return err
+}
+next, err := world.Move(cell, local)
+if errors.Is(err, wrex.ErrImpassableSeam) {
+    // The requested neighbor is a hidden non-standard region.
 }
 ```
 
-The child package also identifies:
+This is not yet the target “neighbor by `CellID` and bearing” operation. The
+current graph and cross-face movement code are tested for their implemented
+behavior, but [issue #1](https://github.com/maloquacious/wrex/issues/1) records
+that the graph is a wrapped lattice rather than the intended closed polyhedron.
 
-```go
-compass.NorthPoleSeam // seam 0
-compass.SouthPoleSeam // seam 3
-```
+## Orientation and optional compass semantics
 
-and provides `compass.Pole` to retrieve those seam descriptors.
+The root package keeps bearings neutral so applications can assign their own
+world-relative meaning. The optional `github.com/maloquacious/wrex/compass`
+package interprets them clockwise as:
 
-### Why compass is separate
+| Core bearing | Compass interpretation |
+|---|---|
+| `Bearing0` | `compass.North` |
+| `Bearing1` | `compass.Northeast` |
+| `Bearing2` | `compass.Southeast` |
+| `Bearing3` | `compass.South` |
+| `Bearing4` | `compass.Southwest` |
+| `Bearing5` | `compass.Northwest` |
 
-The core movement engine needs only topology, axial vectors, and orientation
-sectors. Terms such as north pole, northeast, and southwest are worldbuilding
-or presentation choices. Keeping them in a child package means another game can
-reuse Wrex while assigning different meanings to `Bearing0` through `Bearing5`,
-or no geographic meaning at all.
+The compass package designates seam 0 as the north pole and seam 3 as the south
+pole. Layout controls only how these bearings are drawn:
 
-The inaccessible square seam absorbs the polar singularity. Repeatedly
-recomputing and following `compass.North` converges toward the north-pole seam.
-The pole is not a cell, so movement into it returns `ErrImpassableSeam`. Players
-must turn and navigate around it.
+- for **flat-top** hexagons, north is the single upward direction;
+- for **pointy-top** hexagons, northwest and northeast are the two upward
+  directions.
 
+Those screen directions do not replace world-relative semantics. In the target
+model, repeatedly choosing north should approach the north irregular point, and
+choosing south from near the south pole should continue toward that pole—not
+turn away because of a face-local drawing orientation. The current orientation
+assignment does not reliably provide this behavior; see
+[issue #2](https://github.com/maloquacious/wrex/issues/2).
+
+The separation between neutral bearings and optional compass names is recorded
+in [ADR 0002](docs/adr/0002-separate-local-directions-from-global-bearings.md)
+and [ADR 0003](docs/adr/0003-move-compass-semantics-to-child-package.md).
+
+## Current status
+
+### Implemented and tested as code behavior
+
+- construction for radii 3 through 300 and deterministic cell counts;
+- compact `Cell`, `Coord`, and 32-bit `CellID` value types;
+- validation and encode/decode round trips for ordinary valid cells;
+- local movement within a face and configured edge transitions;
+- `ErrImpassableSeam` at configured blocked edges;
+- neutral bearing/local-direction conversion; and
+- optional compass names and polar seam lookup.
+
+These tests verify the implementation's present graph; they do not prove that
+the graph realizes the target spherical topology.
+
+### Known correctness and API gaps
+
+- [#1: topology does not represent the intended closed polyhedron](https://github.com/maloquacious/wrex/issues/1).
+- [#2: compass bearings do not reliably reach their designated poles](https://github.com/maloquacious/wrex/issues/2).
+- [#3: zero-value worlds are accepted accidentally](https://github.com/maloquacious/wrex/issues/3).
+- [#4: extreme coordinates can collide with valid cell IDs](https://github.com/maloquacious/wrex/issues/4).
+- The target ID-only enumeration and neighbor-by-bearing API is not yet
+  implemented; face, coordinate, edge, and local-direction details remain
+  exported.
+
+## Proposed and exploratory work
+
+The following are directions, not package guarantees:
+
+- **Core Wrex candidates:** a correct closed topology, direct ID enumeration,
+  neighbor-by-ID-and-bearing navigation, and possibly topology-aware distance
+  or path primitives if they can remain policy-free.
+- **Client functionality:** terrain storage, weighted pathfinding, climate,
+  rivers, migration, trade, and game movement rules should ordinarily be built
+  over Wrex's neighbor graph by applications or separate packages.
+- **Exploratory essay:** [Climate Generation on a Polyhedral World](docs/climate-generation.md)
+  sketches one possible client simulation. It is not implemented by Wrex.
+
+Architecture decision records in [`docs/adr`](docs/adr) preserve design history
+and rationale. This README, not every historical statement in an ADR, describes
+the current product contract and implementation status.

@@ -1,12 +1,23 @@
 # Climate Generation on a Polyhedral World
 
-Traditional rectangular hex maps model moisture by sweeping east-to-west across rows. Wrex intentionally abandons the idea of global rows because the world is polyhedral and every face has its own local coordinate system.
+> **Status: Exploratory essay**
+>
+> **Scope:** This is a possible client-side simulation built on a future,
+> correct Wrex neighbor graph. Climate generation is not implemented by Wrex
+> and is not part of its current API contract.
 
-Instead, climate is modeled as movement over the same neighbor graph used by players.
+Traditional rectangular hex maps can model moisture by sweeping east-to-west
+across rows. A sphere-like world has no single global row orientation, so a
+client could instead define climate as movement over the same neighbor graph
+used for navigation.
+
+The sections below describe that proposal, not existing package behavior.
 
 ## Moisture Packets
 
-Represent air as moisture packets carrying humidity, temperature, and energy. Packets originate over oceans or other moisture sources and move by repeatedly following the preferred outbound bearing of the current cell.
+A client could represent air as moisture packets carrying humidity,
+temperature, and energy. Packets could originate over oceans or other moisture
+sources and move by repeatedly following a preferred outbound bearing.
 
 At each step:
 
@@ -16,20 +27,28 @@ At each step:
 4. Recharge humidity over open water.
 5. Stop when humidity or energy is exhausted.
 
-Because movement follows the graph, packets naturally cross face boundaries without any special-case code.
+With a correct neighbor graph and public neighbor operation, packets would
+cross internal face boundaries without client-side face handling.
 
 ## Local Rather Than Global
 
-No cell knows where 'east' is globally. Each cell simply knows which neighboring cell is next in the prevailing circulation. Bearings are interpreted locally by each face.
+The simulation would use world-relative bearings rather than assuming global
+rows. Face-local interpretation is an internal Wrex concern, not state that the
+client should need to store.
 
 ## Mountains
 
-Rain shadows emerge naturally. Moist air climbing mountains precipitates. Descending air warms and dries, producing deserts without explicit biome rules.
+Given client-owned elevation and terrain data, rain shadows could emerge from
+moist air precipitating while climbing and warming while descending.
 
 ## Seams
 
-The inaccessible seams become boundary conditions rather than playable terrain. A seam may inject cold, warmth, humidity, dryness, or magical effects into adjacent cells.
+Hidden irregular regions could become boundary conditions rather than playable
+terrain. A client might inject cold, warmth, humidity, dryness, or setting-
+specific effects into adjacent cells.
 
 ## Unified Design
 
-Movement, climate, rivers, migration, trade routes, and other simulations all operate over the same neighbor graph. The world generator therefore uses one fundamental abstraction for nearly every large-scale simulation.
+Climate, rivers, migration, and trade routes could all consume the same Wrex
+neighbor graph. Their data and rules would remain client responsibilities;
+Wrex would supply only cell identity and topology/navigation primitives.

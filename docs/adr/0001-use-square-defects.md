@@ -1,7 +1,11 @@
 # ADR 0001: Use square defects instead of pentagonal defects
 
-- Status: Accepted
+- Status: Accepted (target design)
 - Date: 2026-07-14
+
+> This record explains the choice of irregular region. It does not establish
+> that the current implementation realizes the intended closed topology. See
+> [issue #1](https://github.com/maloquacious/wrex/issues/1).
 
 ## Context
 
@@ -38,10 +42,10 @@ world.
 
 ## Decision
 
-Wrex will use the octahedral Goldberg-style topology made from playable
-hexagonal regions and 6 inaccessible square defects.
+Wrex's target model will use an octahedral Goldberg-style topology made from
+playable hexagonal regions and 6 inaccessible square defects.
 
-The current world topology contains:
+The intended topology contains:
 
 - 24 playable hexagonal faces;
 - 6 inaccessible square faces represented in code as seams;
@@ -52,13 +56,13 @@ player locations.
 
 ## Rationale
 
-Wrex is intended to model a polyhedral fantasy world, not to approximate a
-sphere as closely as possible. The square construction therefore provides the
-better gameplay graph:
+Wrex is intended to provide a game-agnostic, sphere-like hex grid. It does not
+need the most isotropic possible approximation, so the square construction
+provides the smaller and simpler client-visible set of blocked locations:
 
 - half as many inaccessible regions;
 - 60 percent fewer blocked face incidences than the pentagonal alternative;
-- fewer exceptional neighborhoods for movement and pathfinding;
+- fewer exceptional neighborhoods for movement and pathfinding clients;
 - a simpler topology to explain, inspect, and test.
 
 The reduced number of blocked interfaces is more important to gameplay than the
@@ -71,8 +75,8 @@ rounder appearance supplied by twelve pentagons.
 - Players encounter fewer impassable global defects.
 - More region boundaries remain available for direct travel.
 - Pathfinding has fewer blocked cross-face transitions.
-- The six defects can be given clear world-scale identities, such as polar
-  wastes, magical voids, or great impassable oceans.
+- Clients can assign the six defects identities appropriate to their own
+  setting.
 - The topology remains compatible with additional octahedral Goldberg
   subdivisions that add playable hexagonal faces without adding square defects.
 
